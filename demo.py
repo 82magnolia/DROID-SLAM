@@ -13,9 +13,10 @@ import argparse
 
 from torch.multiprocessing import Process
 from droid import Droid
-
+from lietorch import SE3
 import torch.nn.functional as F
-
+import droid_backends
+from skimage.transform import resize
 
 def show_image(image):
     image = image.permute(1, 2, 0).cpu().numpy()
@@ -34,7 +35,7 @@ def image_stream(imagedir, calib, stride):
     K[1,1] = fy
     K[1,2] = cy
 
-    image_list = sorted(os.listdir(imagedir))[::stride]
+    image_list = sorted(os.listdir(imagedir), key=lambda x: eval(x.strip('.jpg').strip('image-').lstrip('0')))[::stride]
 
     for t, imfile in enumerate(image_list):
         image = cv2.imread(os.path.join(imagedir, imfile))
@@ -61,20 +62,33 @@ def save_reconstruction(droid, reconstruction_path):
     from pathlib import Path
     import random
     import string
-
+    device = droid.video.poses.device
     t = droid.video.counter.value
     tstamps = droid.video.tstamp[:t].cpu().numpy()
     images = droid.video.images[:t].cpu().numpy()
     disps = droid.video.disps_up[:t].cpu().numpy()
     poses = droid.video.poses[:t].cpu().numpy()
+    poses_mtx = SE3(droid.video.poses[:t]).inv().matrix().cpu().numpy()
     intrinsics = droid.video.intrinsics[:t].cpu().numpy()
+
+    # Save masks (TODO: we may have to optimize this part)
+    default_filter_thresh = 0.005  # Tunable parameter for filtering depth
+    thresh = torch.ones_like(droid.video.disps.mean(dim=[1,2])) * default_filter_thresh
+    count = droid_backends.depth_filter(
+        droid.video.poses[:t], droid.video.disps[:t], droid.video.intrinsics[0], torch.arange(t).to(device), thresh[:t])
+    masks = ((count >= 2) & (droid.video.disps[:t] > .5*droid.video.disps[:t].mean(dim=[1,2], keepdim=True)))
+    masks = np.transpose(masks.cpu().numpy(), (1, 2, 0))
+    masks = resize(masks, (masks.shape[0] * 8, masks.shape[1] * 8), order=0, preserve_range=True)
+    masks = np.transpose(masks, (2, 0, 1))
 
     Path("reconstructions/{}".format(reconstruction_path)).mkdir(parents=True, exist_ok=True)
     np.save("reconstructions/{}/tstamps.npy".format(reconstruction_path), tstamps)
     np.save("reconstructions/{}/images.npy".format(reconstruction_path), images)
     np.save("reconstructions/{}/disps.npy".format(reconstruction_path), disps)
     np.save("reconstructions/{}/poses.npy".format(reconstruction_path), poses)
+    np.save("reconstructions/{}/poses_mtx.npy".format(reconstruction_path), poses_mtx)
     np.save("reconstructions/{}/intrinsics.npy".format(reconstruction_path), intrinsics)
+    np.save("reconstructions/{}/masks.npy".format(reconstruction_path), masks)
 
 
 if __name__ == '__main__':
@@ -128,7 +142,7 @@ if __name__ == '__main__':
         
         droid.track(t, image, intrinsics=intrinsics)
 
+    traj_est = droid.terminate(image_stream(args.imagedir, args.calib, args.stride))
+    
     if args.reconstruction_path is not None:
         save_reconstruction(droid, args.reconstruction_path)
-
-    traj_est = droid.terminate(image_stream(args.imagedir, args.calib, args.stride))
