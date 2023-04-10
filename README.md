@@ -38,7 +38,13 @@ git clone --recursive https://github.com/princeton-vl/DROID-SLAM.git
 
 2. Creating a new anaconda environment using the provided .yaml file. Use `environment_novis.yaml` to if you do not want to use the visualization
 ```Bash
-conda env create -f environment.yaml
+conda create -n droidenv python=3.8
+pip install -r requirements.txt -f https://download.pytorch.org/whl/torch_stable.html
+conda install -c conda-forge cudatoolkit-dev=11.3
+wget https://data.pyg.org/whl/torch-1.11.0%2Bcu113/torch_scatter-2.0.9-cp38-cp38-linux_x86_64.whl
+pip install torch_scatter-2.0.9-cp38-cp38-linux_x86_64.whl
+rm torch_scatter-2.0.9-cp38-cp38-linux_x86_64.whl
+conda install -c conda-forge suitesparse
 pip install evo --upgrade --no-binary evo
 pip install gdown
 ```
