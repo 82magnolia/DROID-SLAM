@@ -71,7 +71,7 @@ def save_reconstruction(droid, reconstruction_path):
     poses_mtx = SE3(droid.video.poses[:t]).inv().matrix().cpu().numpy()
     intrinsics = droid.video.intrinsics[:t].cpu().numpy()
 
-    # Save masks (TODO: we may have to optimize this part)
+    # Save masks
     default_filter_thresh = 0.005  # Tunable parameter for filtering depth
     thresh = torch.ones_like(droid.video.disps.mean(dim=[1,2])) * default_filter_thresh
     count = droid_backends.depth_filter(
@@ -89,6 +89,38 @@ def save_reconstruction(droid, reconstruction_path):
     np.save("reconstructions/{}/poses_mtx.npy".format(reconstruction_path), poses_mtx)
     np.save("reconstructions/{}/intrinsics.npy".format(reconstruction_path), intrinsics)
     np.save("reconstructions/{}/masks.npy".format(reconstruction_path), masks)
+
+    # Save pcd
+    poses = droid.video.poses[:t]
+    disps = droid.video.disps[:t]
+    Ps = SE3(poses).inv().matrix().cpu().numpy()
+
+    images = droid.video.images[:t]
+    images = images.cpu()[:,[2,1,0],3::8,3::8].permute(0,2,3,1) / 255.0
+    points = droid_backends.iproj(SE3(poses).inv().data, disps, droid.video.intrinsics[0]).cpu()
+
+    thresh = default_filter_thresh * torch.ones_like(disps.mean(dim=[1,2]))
+
+    count = count.cpu()
+    disps = disps.cpu()
+    masks = ((count >= 2) & (disps > .5*disps.mean(dim=[1,2], keepdim=True)))
+
+    pts_list = []
+    clr_list = []
+    
+    for i in range(t):
+        mask = masks[i].reshape(-1)
+        pts = points[i].reshape(-1, 3)[mask].cpu().numpy()
+        clr = images[i].reshape(-1, 3)[mask].cpu().numpy()
+        
+        pts_list.append(pts)
+        clr_list.append(clr)
+    
+    pts = np.concatenate(pts_list, axis=0)
+    clr = np.concatenate(clr_list, axis=0)
+
+    pcd = np.concatenate([pts, clr], axis=-1)
+    np.savetxt("reconstructions/{}/point_cloud.txt".format(reconstruction_path), pcd)
 
 
 if __name__ == '__main__':
