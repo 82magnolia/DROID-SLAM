@@ -54,7 +54,7 @@ def image_stream(imagedir, calib, stride):
         intrinsics[0::2] *= (w1 / w0)
         intrinsics[1::2] *= (h1 / h0)
 
-        yield t, image[None], intrinsics
+        yield t, image[None], intrinsics, imfile
 
 
 def save_reconstruction(droid, reconstruction_path):
@@ -89,6 +89,10 @@ def save_reconstruction(droid, reconstruction_path):
     np.save("reconstructions/{}/poses_mtx.npy".format(reconstruction_path), poses_mtx)
     np.save("reconstructions/{}/intrinsics.npy".format(reconstruction_path), intrinsics)
     np.save("reconstructions/{}/masks.npy".format(reconstruction_path), masks)
+
+    with open("reconstructions/{}/images.txt".format(reconstruction_path), 'w') as f:
+        for imfile in droid.video.imfile_list:
+            f.write(os.path.join('images/', imfile + '\n'))
 
     # Save pcd
     poses = droid.video.poses[:t]
@@ -161,7 +165,7 @@ if __name__ == '__main__':
         args.upsample = True
 
     tstamps = []
-    for (t, image, intrinsics) in tqdm(image_stream(args.imagedir, args.calib, args.stride)):
+    for (t, image, intrinsics, imfile) in tqdm(image_stream(args.imagedir, args.calib, args.stride)):
         if t < args.t0:
             continue
 
@@ -172,7 +176,7 @@ if __name__ == '__main__':
             args.image_size = [image.shape[2], image.shape[3]]
             droid = Droid(args)
         
-        droid.track(t, image, intrinsics=intrinsics)
+        droid.track(t, image, intrinsics=intrinsics, imfile=imfile)
 
     traj_est = droid.terminate(image_stream(args.imagedir, args.calib, args.stride))
     

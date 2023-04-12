@@ -60,6 +60,7 @@ class DroidFrontend:
             with self.video.get_lock():
                 self.video.counter.value -= 1
                 self.t1 -= 1
+                self.video.imfile_list.pop()
 
         else:
             for itr in range(self.iters2):

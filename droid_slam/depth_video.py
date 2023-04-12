@@ -28,6 +28,7 @@ class DepthVideo:
         self.disps_sens = torch.zeros(buffer, ht//8, wd//8, device="cuda", dtype=torch.float).share_memory_()
         self.disps_up = torch.zeros(buffer, ht, wd, device="cuda", dtype=torch.float).share_memory_()
         self.intrinsics = torch.zeros(buffer, 4, device="cuda", dtype=torch.float).share_memory_()
+        self.imfile_list = []
 
         self.stereo = stereo
         c = 1 if not self.stereo else 2
@@ -75,6 +76,9 @@ class DepthVideo:
 
         if len(item) > 8:
             self.inps[index] = item[8]
+        
+        if len(item) > 9:
+            self.imfile_list.append(item[9])
 
     def __setitem__(self, index, item):
         with self.get_lock():
