@@ -37,7 +37,7 @@ def image_stream(imagedir, calib, stride):
 
     extension = '.' + os.listdir(imagedir)[0].split('.')[-1]
     prefix = "".join([s for s in os.listdir(imagedir)[0].strip(extension) if not s.isdigit()])
-    image_list = sorted(os.listdir(imagedir), key=lambda x: eval(x.strip(extension).strip(prefix).lstrip('0')))[::stride]
+    image_list = sorted(os.listdir(imagedir))[::stride]
 
     for t, imfile in enumerate(image_list):
         image = cv2.imread(os.path.join(imagedir, imfile))
