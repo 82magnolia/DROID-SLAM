@@ -17,13 +17,14 @@ from lietorch import SE3
 import torch.nn.functional as F
 import droid_backends
 from skimage.transform import resize
+import pytransform3d.transformations as pt
 
 def show_image(image):
     image = image.permute(1, 2, 0).cpu().numpy()
     cv2.imshow('image', image / 255.0)
     cv2.waitKey(1)
 
-def image_stream(imagedir, calib, stride):
+def image_stream(imagedir, calib, stride, posedir=None):
     """ image generator """
 
     calib = np.loadtxt(calib, delimiter=" ")
@@ -38,6 +39,11 @@ def image_stream(imagedir, calib, stride):
     extension = '.' + os.listdir(imagedir)[0].split('.')[-1]
     prefix = "".join([s for s in os.listdir(imagedir)[0].strip(extension) if not s.isdigit()])
     image_list = sorted(os.listdir(imagedir))[::stride]
+
+    if posedir is not None:
+        pose_arr = np.load(posedir)
+        pose_R = pose_arr['R'][::stride]  # (N_img, 3, 3)
+        pose_T = pose_arr['T'][::stride]  # (N_img, 3)
 
     for t, imfile in enumerate(image_list):
         image = cv2.imread(os.path.join(imagedir, imfile))
@@ -56,7 +62,32 @@ def image_stream(imagedir, calib, stride):
         intrinsics[0::2] *= (w1 / w0)
         intrinsics[1::2] *= (h1 / h0)
 
-        yield t, image[None], intrinsics, imfile
+        if posedir is not None:
+            curr_R = pose_R[t]
+            curr_T = pose_T[t]
+            curr_pose = np.eye(4)
+
+            # TODO: We have pose issues from PyTorch3D and DROID-SLAM
+            curr_pose[:3, :3] = curr_R.T
+            curr_pose[:3, 3] = curr_T
+
+            curr_pq = pt.pq_from_transform(curr_pose)  # (x, y, z, qw, qx, qy, qz)
+            
+            # Convert (x, y, z, qw, qx, qy, qz) -> (x, y, z, qx, qy, qz, qw)
+            qw = curr_pq[3]
+            curr_pq[3:6] = curr_pq[4:]
+            curr_pq[-1] = qw
+            curr_pq = torch.from_numpy(curr_pq).to("cuda")  # (6, )
+
+            """
+            Note the following command will give the original 4x4 matrix
+            
+                curr_pose = SE3(curr_pq).matrix()
+            
+            """
+            yield t, image[None], intrinsics, imfile, curr_pq
+        else:
+            yield t, image[None], intrinsics, imfile, None
 
 
 def save_reconstruction(droid, reconstruction_path):
@@ -150,6 +181,7 @@ if __name__ == '__main__':
     parser.add_argument("--frontend_radius", type=int, default=2, help="force edges between frames within radius")
     parser.add_argument("--frontend_nms", type=int, default=1, help="non-maximal supression of edges")
 
+    parser.add_argument("--pose_file", type=str, help="path to pose file", default=None)
     parser.add_argument("--backend_thresh", type=float, default=22.0)
     parser.add_argument("--backend_radius", type=int, default=2)
     parser.add_argument("--backend_nms", type=int, default=3)
@@ -162,12 +194,18 @@ if __name__ == '__main__':
 
     droid = None
 
+    # If pose is known, only optimize disparity
+    if args.pose_file is not None:
+        disp_only = True
+    else:
+        disp_only = False
+
     # need high resolution depths
     if args.reconstruction_path is not None:
         args.upsample = True
 
     tstamps = []
-    for (t, image, intrinsics, imfile) in tqdm(image_stream(args.imagedir, args.calib, args.stride)):
+    for (t, image, intrinsics, imfile, curr_pose) in tqdm(image_stream(args.imagedir, args.calib, args.stride, args.pose_file)):
         if t < args.t0:
             continue
 
@@ -178,9 +216,9 @@ if __name__ == '__main__':
             args.image_size = [image.shape[2], image.shape[3]]
             droid = Droid(args)
         
-        droid.track(t, image, intrinsics=intrinsics, imfile=imfile)
+        droid.track(t, image, intrinsics=intrinsics, imfile=imfile, disp_only=disp_only, pose=curr_pose)
 
-    traj_est = droid.terminate(image_stream(args.imagedir, args.calib, args.stride))
+    traj_est = droid.terminate(image_stream(args.imagedir, args.calib, args.stride), disp_only=disp_only)
     
     if args.reconstruction_path is not None:
         save_reconstruction(droid, args.reconstruction_path)

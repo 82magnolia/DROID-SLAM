@@ -182,7 +182,7 @@ class DepthVideo:
 
         return d
 
-    def ba(self, target, weight, eta, ii, jj, t0=1, t1=None, itrs=2, lm=1e-4, ep=0.1, motion_only=False):
+    def ba(self, target, weight, eta, ii, jj, t0=1, t1=None, itrs=2, lm=1e-4, ep=0.1, motion_only=False, disp_only=False):
         """ dense bundle adjustment (DBA) """
 
         with self.get_lock():
@@ -192,6 +192,6 @@ class DepthVideo:
                 t1 = max(ii.max().item(), jj.max().item()) + 1
 
             droid_backends.ba(self.poses, self.disps, self.intrinsics[0], self.disps_sens,
-                target, weight, eta, ii, jj, t0, t1, itrs, lm, ep, motion_only)
+                target, weight, eta, ii, jj, t0, t1, itrs, lm, ep, motion_only, disp_only)
 
             self.disps.clamp_(min=0.001)

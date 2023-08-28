@@ -1326,7 +1326,8 @@ std::vector<torch::Tensor> ba_cuda(
     const int iterations,
     const float lm,
     const float ep,
-    const bool motion_only)
+    const bool motion_only,
+    const bool disp_only)
 {
   auto opts = poses.options();
   const int num = ii.size(0);
@@ -1391,6 +1392,38 @@ std::vector<torch::Tensor> ba_cuda(
         dx.packed_accessor32<float,2,torch::RestrictPtrTraits>(), t0, t1);
     }
     
+    else if (disp_only) {
+      // only solve for disparity
+      const float alpha = 0.05;
+      torch::Tensor m = (disps_sens.index({kx, "..."}) > 0).to(torch::TensorOptions().dtype(torch::kFloat32)).view({-1, ht*wd});
+      torch::Tensor C = accum_cuda(Cii, ii, kx) + m * alpha + (1 - m) * eta.view({-1, ht*wd});
+      torch::Tensor w = accum_cuda(wi, ii, kx) - m * alpha * (disps.index({kx, "..."}) - disps_sens.index({kx, "..."})).view({-1, ht*wd});
+      torch::Tensor Q = 1.0 / C;
+
+      torch::Tensor Ei = accum_cuda(Eii.view({num, 6*ht*wd}), ii, ts).view({t1-t0, 6, ht*wd});
+      torch::Tensor E = torch::cat({Ei, Eij}, 0);
+
+      SparseBlock S = schur_block(E, Q, w, ii_exp, jj_exp, kk_exp, t0, t1);
+      dx = (A - S).solve(lm, ep);
+
+      torch::Tensor ix = jj_exp - t0;
+      torch::Tensor dw = torch::zeros({ix.size(0), ht*wd}, opts);
+
+      EvT6x1_kernel<<<ix.size(0), THREADS>>>(
+        E.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
+        dx.packed_accessor32<float,2,torch::RestrictPtrTraits>(),
+        ix.packed_accessor32<long,1,torch::RestrictPtrTraits>(),
+        dw.packed_accessor32<float,2,torch::RestrictPtrTraits>());
+
+      dz = Q * (w - accum_cuda(dw, ii_exp, kx));
+
+      // update disparity maps
+      disp_retr_kernel<<<kx.size(0), THREADS>>>(
+        disps.packed_accessor32<float,3,torch::RestrictPtrTraits>(),
+        dz.packed_accessor32<float,2,torch::RestrictPtrTraits>(),
+        kx.packed_accessor32<long,1,torch::RestrictPtrTraits>());
+    }
+
     else {
       // add depth residual if there are depth sensor measurements
       const float alpha = 0.05;

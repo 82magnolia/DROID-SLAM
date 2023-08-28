@@ -57,31 +57,31 @@ class Droid:
         self.net.load_state_dict(state_dict)
         self.net.to("cuda:0").eval()
 
-    def track(self, tstamp, image, depth=None, intrinsics=None, imfile=None):
+    def track(self, tstamp, image, depth=None, intrinsics=None, imfile=None, disp_only=False, pose=None):
         """ main thread - update map """
 
         with torch.no_grad():
             # check there is enough motion
-            self.filterx.track(tstamp, image, depth, intrinsics, imfile)
+            self.filterx.track(tstamp, image, depth, intrinsics, imfile, pose)
 
             # local bundle adjustment
-            self.frontend()
+            self.frontend(disp_only=disp_only)
 
             # global bundle adjustment
             # self.backend()
 
-    def terminate(self, stream=None):
+    def terminate(self, stream=None, disp_only=False):
         """ terminate the visualization process, return poses [t, q] """
 
         del self.frontend
 
         torch.cuda.empty_cache()
         print("#" * 32)
-        self.backend(7)
+        self.backend(7, disp_only=disp_only)
 
         torch.cuda.empty_cache()
         print("#" * 32)
-        self.backend(12)
+        self.backend(12, disp_only=disp_only)
 
         camera_trajectory = self.traj_filler(stream)
         return camera_trajectory.inv().data.cpu().numpy()

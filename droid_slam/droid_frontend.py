@@ -32,7 +32,7 @@ class DroidFrontend:
         self.frontend_thresh = args.frontend_thresh
         self.frontend_radius = args.frontend_radius
 
-    def __update(self):
+    def __update(self, disp_only=False):
         """ add edges, perform update """
 
         self.count += 1
@@ -48,7 +48,7 @@ class DroidFrontend:
            self.video.disps_sens[self.t1-1], self.video.disps[self.t1-1])
 
         for itr in range(self.iters1):
-            self.graph.update(None, None, use_inactive=True)
+            self.graph.update(None, None, use_inactive=True, disp_only=disp_only)
 
         # set initial pose for next frame
         poses = SE3(self.video.poses)
@@ -64,7 +64,7 @@ class DroidFrontend:
 
         else:
             for itr in range(self.iters2):
-                self.graph.update(None, None, use_inactive=True)
+                self.graph.update(None, None, use_inactive=True, disp_only=disp_only)
 
         # set pose for next itration
         self.video.poses[self.t1] = self.video.poses[self.t1-1]
@@ -73,7 +73,7 @@ class DroidFrontend:
         # update visualization
         self.video.dirty[self.graph.ii.min():self.t1] = True
 
-    def __initialize(self):
+    def __initialize(self, disp_only=False):
         """ initialize the SLAM system """
 
         self.t0 = 0
@@ -82,12 +82,12 @@ class DroidFrontend:
         self.graph.add_neighborhood_factors(self.t0, self.t1, r=3)
 
         for itr in range(8):
-            self.graph.update(1, use_inactive=True)
+            self.graph.update(1, use_inactive=True, disp_only=disp_only)
 
         self.graph.add_proximity_factors(0, 0, rad=2, nms=2, thresh=self.frontend_thresh, remove=False)
 
         for itr in range(8):
-            self.graph.update(1, use_inactive=True)
+            self.graph.update(1, use_inactive=True, disp_only=disp_only)
 
 
         # self.video.normalize()
@@ -106,15 +106,15 @@ class DroidFrontend:
 
         self.graph.rm_factors(self.graph.ii < self.warmup-4, store=True)
 
-    def __call__(self):
+    def __call__(self, disp_only=False):
         """ main update """
 
         # do initialization
         if not self.is_initialized and self.video.counter.value == self.warmup:
-            self.__initialize()
+            self.__initialize(disp_only=disp_only)
             
         # do update
         elif self.is_initialized and self.t1 < self.video.counter.value:
-            self.__update()
+            self.__update(disp_only=disp_only)
 
         

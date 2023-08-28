@@ -42,7 +42,7 @@ class MotionFilter:
 
     @torch.cuda.amp.autocast(enabled=True)
     @torch.no_grad()
-    def track(self, tstamp, image, depth=None, intrinsics=None, imfile=None):
+    def track(self, tstamp, image, depth=None, intrinsics=None, imfile=None, pose=None):  # pose specifies prior pose
         """ main update operation - run on every frame in video """
 
         Id = lietorch.SE3.Identity(1,).data.squeeze()
@@ -60,7 +60,10 @@ class MotionFilter:
         if self.video.counter.value == 0:
             net, inp = self.__context_encoder(inputs[:,[0]])
             self.net, self.inp, self.fmap = net, inp, gmap
-            self.video.append(tstamp, image[0], Id, 1.0, depth, intrinsics / 8.0, gmap, net[0,0], inp[0,0], imfile)
+            if pose is None:
+                self.video.append(tstamp, image[0], Id, 1.0, depth, intrinsics / 8.0, gmap, net[0,0], inp[0,0], imfile)
+            else:
+                self.video.append(tstamp, image[0], pose, 1.0, depth, intrinsics / 8.0, gmap, net[0,0], inp[0,0], imfile)
 
         ### only add new frame if there is enough motion ###
         else:                
@@ -76,8 +79,7 @@ class MotionFilter:
                 self.count = 0
                 net, inp = self.__context_encoder(inputs[:,[0]])
                 self.net, self.inp, self.fmap = net, inp, gmap
-                self.video.append(tstamp, image[0], None, None, depth, intrinsics / 8.0, gmap, net[0], inp[0], imfile)
-
+                self.video.append(tstamp, image[0], pose, None, depth, intrinsics / 8.0, gmap, net[0], inp[0], imfile)
             else:
                 self.count += 1
 
