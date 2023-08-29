@@ -84,5 +84,8 @@ class Droid:
         final_scale = self.backend(12, disp_only=disp_only)
 
         camera_trajectory = self.traj_filler(stream)
-        return camera_trajectory.inv().data.cpu().numpy(), final_scale
 
+        if disp_only:  # Use the scale value when saving (if we know camera motion a priori)
+            return camera_trajectory.inv().data.cpu().numpy(), final_scale
+        else:
+            return camera_trajectory.inv().data.cpu().numpy(), 1.0
