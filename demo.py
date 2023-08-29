@@ -45,6 +45,11 @@ def image_stream(imagedir, calib, stride, posedir=None):
         pose_R = pose_arr['R'][::stride]  # (N_img, 3, 3)
         pose_T = pose_arr['T'][::stride]  # (N_img, 3)
 
+        # Convert PyTorch3D coordinate frame to DROID-SLAM coordinate frame
+        R_convert = np.array([[-1., 0, 0], [0, -1., 0], [0, 0, 1.]])
+        pose_R = pose_R @ R_convert[None, ...]
+        pose_T = pose_T @ R_convert
+
     for t, imfile in enumerate(image_list):
         image = cv2.imread(os.path.join(imagedir, imfile))
         if len(calib) > 4:
@@ -67,7 +72,6 @@ def image_stream(imagedir, calib, stride, posedir=None):
             curr_T = pose_T[t]
             curr_pose = np.eye(4)
 
-            # TODO: We have pose issues from PyTorch3D and DROID-SLAM
             curr_pose[:3, :3] = curr_R.T
             curr_pose[:3, 3] = curr_T
 
@@ -90,7 +94,7 @@ def image_stream(imagedir, calib, stride, posedir=None):
             yield t, image[None], intrinsics, imfile, None
 
 
-def save_reconstruction(droid, reconstruction_path):
+def save_reconstruction(droid, reconstruction_path, scale):
 
     from pathlib import Path
     import random
@@ -105,7 +109,7 @@ def save_reconstruction(droid, reconstruction_path):
     intrinsics = droid.video.intrinsics[:t].cpu().numpy()
 
     # Save masks
-    default_filter_thresh = 0.005  # Tunable parameter for filtering depth
+    default_filter_thresh = 0.005 / scale  # Tunable parameter for filtering depth
     thresh = torch.ones_like(droid.video.disps.mean(dim=[1,2])) * default_filter_thresh
     count = droid_backends.depth_filter(
         droid.video.poses[:t], droid.video.disps[:t], droid.video.intrinsics[0], torch.arange(t).to(device), thresh[:t])
@@ -218,7 +222,7 @@ if __name__ == '__main__':
         
         droid.track(t, image, intrinsics=intrinsics, imfile=imfile, disp_only=disp_only, pose=curr_pose)
 
-    traj_est = droid.terminate(image_stream(args.imagedir, args.calib, args.stride), disp_only=disp_only)
+    traj_est, scale = droid.terminate(image_stream(args.imagedir, args.calib, args.stride), disp_only=disp_only)
     
     if args.reconstruction_path is not None:
-        save_reconstruction(droid, args.reconstruction_path)
+        save_reconstruction(droid, args.reconstruction_path, scale)

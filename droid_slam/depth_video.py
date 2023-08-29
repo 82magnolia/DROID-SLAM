@@ -138,7 +138,14 @@ class DepthVideo:
             self.disps[:self.counter.value] /= s
             self.poses[:self.counter.value,:3] *= s
             self.dirty[:self.counter.value] = True
+        return s
 
+    def unnormalize(self, s):
+        """ normalize depth and poses """
+
+        with self.get_lock():
+            self.disps[:self.counter.value] *= s
+            self.poses[:self.counter.value,:3] /= s
 
     def reproject(self, ii, jj):
         """ project points from ii -> jj """

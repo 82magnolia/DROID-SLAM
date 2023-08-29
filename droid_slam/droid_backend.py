@@ -27,7 +27,9 @@ class DroidBackend:
 
         t = self.video.counter.value
         if not self.video.stereo and not torch.any(self.video.disps_sens):
-             self.video.normalize()
+            scale = self.video.normalize()
+        else:
+            scale = 1.
 
         graph = FactorGraph(self.video, self.update_op, corr_impl="alt", max_factors=16*t, upsample=self.upsample)
 
@@ -39,3 +41,7 @@ class DroidBackend:
         graph.update_lowmem(steps=steps, disp_only=disp_only)
         graph.clear_edges()
         self.video.dirty[:t] = True
+        if disp_only:  # Un-normalize if we don't know camera motion
+            self.video.unnormalize(scale)
+
+        return scale  # Return scale for further use in point cloud saving
