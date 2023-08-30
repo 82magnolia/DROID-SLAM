@@ -43,5 +43,3 @@ class DroidBackend:
         self.video.dirty[:t] = True
         if disp_only:  # Un-normalize if we don't know camera motion
             self.video.unnormalize(scale)
-
-        return scale  # Return scale for further use in point cloud saving

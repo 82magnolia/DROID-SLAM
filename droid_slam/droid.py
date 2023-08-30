@@ -81,11 +81,8 @@ class Droid:
 
         torch.cuda.empty_cache()
         print("#" * 32)
-        final_scale = self.backend(12, disp_only=disp_only)
+        self.backend(12, disp_only=disp_only)
 
         camera_trajectory = self.traj_filler(stream)
 
-        if disp_only:  # Use the scale value when saving (if we know camera motion a priori)
-            return camera_trajectory.inv().data.cpu().numpy(), final_scale
-        else:
-            return camera_trajectory.inv().data.cpu().numpy(), 1.0
+        return camera_trajectory.inv().data.cpu().numpy()
