@@ -136,7 +136,6 @@ def save_reconstruction(droid, reconstruction_path, trans_scale):
     masks = resize(masks, (masks.shape[0] * 8, masks.shape[1] * 8), order=0, preserve_range=True)
     masks = np.transpose(masks, (2, 0, 1))
 
-    # TODO: Save modified disparity and pose according to camera scale
     Path("reconstructions/{}".format(reconstruction_path)).mkdir(parents=True, exist_ok=True)
     np.save("reconstructions/{}/tstamps.npy".format(reconstruction_path), tstamps)
     np.save("reconstructions/{}/images.npy".format(reconstruction_path), images)
@@ -145,6 +144,8 @@ def save_reconstruction(droid, reconstruction_path, trans_scale):
     np.save("reconstructions/{}/poses_mtx.npy".format(reconstruction_path), poses_mtx)
     np.save("reconstructions/{}/intrinsics.npy".format(reconstruction_path), intrinsics)
     np.save("reconstructions/{}/masks.npy".format(reconstruction_path), masks)
+    with open("reconstructions/{}/scale.txt".format(reconstruction_path), 'w') as f:
+        f.write(f"{trans_scale}")
 
     with open("reconstructions/{}/images.txt".format(reconstruction_path), 'w') as f:
         for imfile in droid.video.imfile_list:
