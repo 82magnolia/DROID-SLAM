@@ -75,13 +75,18 @@ class Droid:
 
         del self.frontend
 
-        torch.cuda.empty_cache()
-        print("#" * 32)
-        self.backend(7, disp_only=disp_only)
+        if disp_only:  # Do BA for a smaller number of steps
+            torch.cuda.empty_cache()
+            print("#" * 32)
+            self.backend(5, disp_only=True)
+        else:
+            torch.cuda.empty_cache()
+            print("#" * 32)
+            self.backend(7, disp_only=False)
 
-        torch.cuda.empty_cache()
-        print("#" * 32)
-        self.backend(12, disp_only=disp_only)
+            torch.cuda.empty_cache()
+            print("#" * 32)
+            self.backend(12, disp_only=False)
 
         camera_trajectory = self.traj_filler(stream)
 

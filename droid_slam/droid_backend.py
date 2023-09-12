@@ -26,10 +26,10 @@ class DroidBackend:
         """ main update """
 
         t = self.video.counter.value
-        if not self.video.stereo and not torch.any(self.video.disps_sens):
-            scale = self.video.normalize()
-        else:
+        if self.video.stereo or torch.any(self.video.disps_sens) or disp_only:
             scale = 1.
+        else:
+            scale = self.video.normalize()
 
         graph = FactorGraph(self.video, self.update_op, corr_impl="alt", max_factors=16*t, upsample=self.upsample)
 
@@ -41,5 +41,3 @@ class DroidBackend:
         graph.update_lowmem(steps=steps, disp_only=disp_only)
         graph.clear_edges()
         self.video.dirty[:t] = True
-        if disp_only:  # Un-normalize if we don't know camera motion
-            self.video.unnormalize(scale)

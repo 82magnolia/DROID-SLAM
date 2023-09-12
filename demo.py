@@ -250,8 +250,7 @@ if __name__ == '__main__':
         else:  # Poses are also optimized, so start tracking right away
             droid.track(t, image, intrinsics=intrinsics, imfile=imfile, disp_only=False, pose=curr_pose)
     
-    if not disp_only:  # Only do global BA if poses are not given
-        traj_est = droid.terminate(image_stream(args.imagedir, args.calib, args.stride), disp_only=False)
-    
+    traj_est = droid.terminate(image_stream(args.imagedir, args.calib, args.stride), disp_only=disp_only)
+
     if args.reconstruction_path is not None:
         save_reconstruction(droid, args.reconstruction_path, trans_scale)
