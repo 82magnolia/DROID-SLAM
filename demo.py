@@ -112,7 +112,7 @@ def image_stream(imagedir, calib, stride, posedir=None, validposedir=None, trans
             yield t, image[None], intrinsics, imfile, None
 
 
-def save_reconstruction(droid, reconstruction_path, trans_scale):
+def save_reconstruction(droid, reconstruction_path, trans_scale, sildir=None):
 
     from pathlib import Path
     import random
@@ -170,9 +170,28 @@ def save_reconstruction(droid, reconstruction_path, trans_scale):
     clr_list = []
     
     for i in range(t):
-        mask = masks[i].reshape(-1)
-        pts = points[i].reshape(-1, 3)[mask].cpu().numpy()
-        clr = images[i].reshape(-1, 3)[mask].cpu().numpy()
+        if sildir is not None:  # Make addional masks from object silhouettes
+            silfile = droid.video.imfile_list[i].replace('image', 'sil')
+            silfile = os.path.join(sildir, silfile)
+            sil = cv2.cvtColor(cv2.imread(silfile), cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.
+            h0, w0 = sil.shape
+            h1 = int(h0 * np.sqrt((384 * 512) / (h0 * w0)))
+            w1 = int(w0 * np.sqrt((384 * 512) / (h0 * w0)))
+            sil = cv2.resize(sil, (w1, h1))
+            sil = sil[:h1-h1%8, :w1-w1%8]
+
+            sil = cv2.resize(sil, (sil.shape[1] // 8, sil.shape[0] // 8))  # Resize by a factor of 8. (DROID-SLAM setting)
+            sil[sil >= 0.5] = 1.  # Binarize silhouettes
+            sil[sil < 0.5] = 0.
+            sil = sil.astype(bool)
+
+            mask = (torch.from_numpy(sil) & masks[i]).reshape(-1)
+            pts = points[i].reshape(-1, 3)[mask].cpu().numpy()
+            clr = images[i].reshape(-1, 3)[mask].cpu().numpy()
+        else:
+            mask = masks[i].reshape(-1)
+            pts = points[i].reshape(-1, 3)[mask].cpu().numpy()
+            clr = images[i].reshape(-1, 3)[mask].cpu().numpy()
         
         pts_list.append(pts)
         clr_list.append(clr)
@@ -191,6 +210,7 @@ if __name__ == '__main__':
     parser.add_argument("--t0", default=0, type=int, help="starting frame")
     parser.add_argument("--stride", default=3, type=int, help="frame stride")
 
+    parser.add_argument("--sildir", type=str, help="optional path to object silhouette directory", default=None)
     parser.add_argument("--weights", default="droid.pth")
     parser.add_argument("--buffer", type=int, default=512)
     parser.add_argument("--image_size", default=[240, 320])
@@ -253,4 +273,4 @@ if __name__ == '__main__':
     traj_est = droid.terminate(image_stream(args.imagedir, args.calib, args.stride), disp_only=disp_only)
 
     if args.reconstruction_path is not None:
-        save_reconstruction(droid, args.reconstruction_path, trans_scale)
+        save_reconstruction(droid, args.reconstruction_path, trans_scale, args.sildir)
