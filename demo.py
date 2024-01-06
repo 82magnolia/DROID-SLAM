@@ -166,41 +166,113 @@ def save_reconstruction(droid, reconstruction_path, trans_scale, sildir=None):
     disps = disps.cpu()
     masks = ((count >= 2) & (disps > .5*disps.mean(dim=[1,2], keepdim=True)))
 
-    pts_list = []
-    clr_list = []
-    
-    for i in range(t):
-        if sildir is not None:  # Make addional masks from object silhouettes
+    # Optionally save object-level reconstructions from silhouettes
+    if sildir is not None:
+        scene_pts_list = []
+        scene_clr_list = []
+        bg_pts_list = []
+        bg_clr_list = []
+        obj_pts_dict = {}  # Dictionary mapping object ID to list of points
+        obj_clr_dict = {}  # Dictionary mapping object ID to list of point colors
+
+        for i in range(t):
+            # Scene reconstructions
+            scene_pts = points[i].reshape(-1, 3)[masks[i].reshape(-1)]
+            scene_clr = images[i].reshape(-1, 3)[masks[i].reshape(-1)]
+            scene_pts_list.append(scene_pts)
+            scene_clr_list.append(scene_clr)
+
+            # Object and background reconstructions
             silfile = droid.video.imfile_list[i].replace('image', 'sil')
             silfile = os.path.join(sildir, silfile)
-            sil = cv2.cvtColor(cv2.imread(silfile), cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.
-            h0, w0 = sil.shape
-            h1 = int(h0 * np.sqrt((384 * 512) / (h0 * w0)))
-            w1 = int(w0 * np.sqrt((384 * 512) / (h0 * w0)))
-            sil = cv2.resize(sil, (w1, h1))
-            sil = sil[:h1-h1%8, :w1-w1%8]
+            sil = cv2.cvtColor(cv2.imread(silfile), cv2.COLOR_BGR2GRAY)
 
-            sil = cv2.resize(sil, (sil.shape[1] // 8, sil.shape[0] // 8))  # Resize by a factor of 8. (DROID-SLAM setting)
-            sil[sil >= 0.5] = 1.  # Binarize silhouettes
-            sil[sil < 0.5] = 0.
-            sil = sil.astype(bool)
+            sil_classes = np.unique(sil)
 
-            mask = (torch.from_numpy(sil) & masks[i]).reshape(-1)
-            pts = points[i].reshape(-1, 3)[mask].cpu().numpy()
-            clr = images[i].reshape(-1, 3)[mask].cpu().numpy()
-        else:
+            for sil_class in sil_classes:
+                if sil_class == 0:
+                    bg_sil = (sil == sil_class)
+                    bg_sil = bg_sil.astype(np.float32)
+
+                    h0, w0 = bg_sil.shape
+                    h1 = int(h0 * np.sqrt((384 * 512) / (h0 * w0)))
+                    w1 = int(w0 * np.sqrt((384 * 512) / (h0 * w0)))
+                    bg_sil = cv2.resize(bg_sil, (w1, h1))
+                    bg_sil = bg_sil[:h1-h1%8, :w1-w1%8]
+
+                    bg_sil = cv2.resize(bg_sil, (bg_sil.shape[1] // 8, bg_sil.shape[0] // 8))  # Resize by a factor of 8. (DROID-SLAM setting)
+                    bg_sil[bg_sil >= 0.5] = 1.  # Binarize silhouettes
+                    bg_sil[bg_sil < 0.5] = 0.
+                    bg_sil = bg_sil.astype(bool)
+
+                    mask = (torch.from_numpy(bg_sil) & masks[i]).reshape(-1)
+                    bg_pts = points[i].reshape(-1, 3)[mask].cpu().numpy()
+                    bg_clr = images[i].reshape(-1, 3)[mask].cpu().numpy()
+
+                    bg_pts_list.append(bg_pts)
+                    bg_clr_list.append(bg_clr)
+                else:
+                    if sil_class not in obj_pts_dict.keys():
+                        obj_pts_dict[sil_class] = []
+                        obj_clr_dict[sil_class] = []
+                    
+                    obj_sil = (sil == sil_class)
+                    obj_sil = obj_sil.astype(np.float32)
+
+                    h0, w0 = obj_sil.shape
+                    h1 = int(h0 * np.sqrt((384 * 512) / (h0 * w0)))
+                    w1 = int(w0 * np.sqrt((384 * 512) / (h0 * w0)))
+                    obj_sil = cv2.resize(obj_sil, (w1, h1))
+                    obj_sil = obj_sil[:h1-h1%8, :w1-w1%8]
+
+                    obj_sil = cv2.resize(obj_sil, (obj_sil.shape[1] // 8, obj_sil.shape[0] // 8))  # Resize by a factor of 8. (DROID-SLAM setting)
+                    obj_sil[obj_sil >= 0.5] = 1.  # Binarize silhouettes
+                    obj_sil[obj_sil < 0.5] = 0.
+                    obj_sil = obj_sil.astype(bool)
+
+                    mask = (torch.from_numpy(obj_sil) & masks[i]).reshape(-1)
+                    obj_pts = points[i].reshape(-1, 3)[mask].cpu().numpy()
+                    obj_clr = images[i].reshape(-1, 3)[mask].cpu().numpy()
+
+                    obj_pts_dict[sil_class].append(obj_pts)
+                    obj_clr_dict[sil_class].append(obj_clr)
+
+        scene_pts = np.concatenate(scene_pts_list, axis=0) / trans_scale
+        scene_clr = np.concatenate(scene_clr_list, axis=0)
+        scene_pcd = np.concatenate([scene_pts, scene_clr], axis=-1)
+        np.savetxt("reconstructions/{}/point_cloud.txt".format(reconstruction_path), scene_pcd)
+
+        bg_pts = np.concatenate(bg_pts_list, axis=0) / trans_scale
+        bg_clr = np.concatenate(bg_clr_list, axis=0)
+        bg_pcd = np.concatenate([bg_pts, bg_clr], axis=-1)
+        np.savetxt("reconstructions/{}/point_cloud_bg.txt".format(reconstruction_path), bg_pcd)
+
+        valid_thres = 100  # Point count threshold for saving
+        for obj_id in obj_pts_dict.keys():
+            obj_pts = np.concatenate(obj_pts_dict[obj_id], axis=0) / trans_scale
+            obj_clr = np.concatenate(obj_clr_dict[obj_id], axis=0)
+            obj_pcd = np.concatenate([obj_pts, obj_clr], axis=-1)
+
+            if obj_pcd.shape[0] >= valid_thres:
+                np.savetxt("reconstructions/{}/point_cloud_obj_{}.txt".format(reconstruction_path, obj_id), obj_pcd)
+
+    else:  # Only a single model
+        pts_list = []
+        clr_list = []
+        
+        for i in range(t):
             mask = masks[i].reshape(-1)
             pts = points[i].reshape(-1, 3)[mask].cpu().numpy()
             clr = images[i].reshape(-1, 3)[mask].cpu().numpy()
+            
+            pts_list.append(pts)
+            clr_list.append(clr)
         
-        pts_list.append(pts)
-        clr_list.append(clr)
-    
-    pts = np.concatenate(pts_list, axis=0) / trans_scale
-    clr = np.concatenate(clr_list, axis=0)
+        pts = np.concatenate(pts_list, axis=0) / trans_scale
+        clr = np.concatenate(clr_list, axis=0)
 
-    pcd = np.concatenate([pts, clr], axis=-1)
-    np.savetxt("reconstructions/{}/point_cloud.txt".format(reconstruction_path), pcd)
+        pcd = np.concatenate([pts, clr], axis=-1)
+        np.savetxt("reconstructions/{}/point_cloud.txt".format(reconstruction_path), pcd)
 
 
 if __name__ == '__main__':
